@@ -1669,7 +1669,7 @@ index 45e22239144..52a6e37adfa 100644
  static struct object *console_open_file( struct object *obj, unsigned int access,
                                           unsigned int sharing, unsigned int options );
 +static struct fast_sync *console_get_fast_sync( struct object *obj );
- 
+ static int console_add_queue( struct object *obj, struct wait_queue_entry *entry );
  static const struct object_ops console_ops =
  {
 @@ -96,7 +98,7 @@ static const struct object_ops console_ops =
