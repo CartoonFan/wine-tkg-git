@@ -9,7 +9,7 @@ for path in sys.argv[1:]:
     pe = pefile.PE(path)
 
     for section in pe.sections:
-        if section.Name.decode("utf-8")[0:5] == ".text":
+        if section.Name.decode("utf-8")[:5] == ".text":
             section.Characteristics &= ~pefile.SECTION_CHARACTERISTICS['IMAGE_SCN_CNT_INITIALIZED_DATA']
         section.Characteristics &= ~pefile.SECTION_CHARACTERISTICS['IMAGE_SCN_ALIGN_MASK']
 

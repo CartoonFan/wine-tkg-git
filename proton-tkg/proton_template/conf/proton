@@ -39,13 +39,13 @@ def nonzero(s):
     return len(s) > 0 and s != "0"
 
 def prepend_to_env_str(env, variable, prepend_str, separator):
-    if not variable in env:
+    if variable not in env:
         env[variable] = prepend_str
     else:
         env[variable] = prepend_str + separator + env[variable]
 
 def append_to_env_str(env, variable, append_str, separator):
-    if not variable in env:
+    if variable not in env:
         env[variable] = append_str
     else:
         env[variable] = env[variable] + separator + append_str
@@ -82,12 +82,7 @@ def merge_user_dir(src, dst):
     for src_dir, dirs, files in os.walk(src):
         dst_dir = src_dir.replace(src, dst, 1)
 
-        #as described below, avoid merging game save subdirs, too
-        child_of_extant_dir = False
-        for dir_ in extant_dirs:
-            if dir_ in dst_dir:
-                child_of_extant_dir = True
-                break
+        child_of_extant_dir = any(dir_ in dst_dir for dir_ in extant_dirs)
         if child_of_extant_dir:
             continue
 
@@ -165,8 +160,10 @@ def getmtimestr(*path_fragments):
         return "0"
 
 def try_get_game_library_dir():
-    if not "STEAM_COMPAT_INSTALL_PATH" in g_session.env or \
-            not "STEAM_COMPAT_LIBRARY_PATHS" in g_session.env:
+    if (
+        "STEAM_COMPAT_INSTALL_PATH" not in g_session.env
+        or "STEAM_COMPAT_LIBRARY_PATHS" not in g_session.env
+    ):
         return None
 
     #find library path which is a subset of the game path
@@ -386,7 +383,7 @@ class CompatData:
         if old_ver is None:
             return
 
-        if not '-' in old_ver:
+        if '-' not in old_ver:
             #How can this happen??
             log("Prefix has an invalid version?! You may want to back up user files and delete this prefix.")
             #If it does, just let the Wine upgrade happen and hope it works...
@@ -410,12 +407,17 @@ class CompatData:
                 self.remove_tracked_files()
                 return
 
-            if old_proton_ver == "3.7" and old_prefix_ver == "1":
-                if not os.path.exists(self.prefix_dir + "/drive_c/windows/syswow64/kernel32.dll"):
-                    #shipped a busted 64-bit-only installation on 20180822. detect and wipe clean
-                    log("Detected broken 64-bit-only installation, re-creating prefix.")
-                    shutil.rmtree(self.prefix_dir)
-                    return
+            if (
+                old_proton_ver == "3.7"
+                and old_prefix_ver == "1"
+                and not os.path.exists(
+                    self.prefix_dir + "/drive_c/windows/syswow64/kernel32.dll"
+                )
+            ):
+                #shipped a busted 64-bit-only installation on 20180822. detect and wipe clean
+                log("Detected broken 64-bit-only installation, re-creating prefix.")
+                shutil.rmtree(self.prefix_dir)
+                return
 
             #replace broken .NET installations with wine-mono support
             if os.path.exists(self.prefix_dir + "/drive_c/windows/Microsoft.NET/NETFXRepair.exe") and \
@@ -442,14 +444,10 @@ class CompatData:
                     os.rename(self.prefix_dir + "system.reg", self.prefix_dir + "system.reg.old")
                 except OSError:
                     os.remove(self.prefix_dir + "system.reg")
-                    pass
-
                 try:
                     os.rename(self.prefix_dir + "system.reg.new", self.prefix_dir + "system.reg")
                 except OSError:
                     log("Unable to write new registry file to " + self.prefix_dir + "system.reg")
-                    pass
-
             # Prior to prefix version 6.3-3, ShellExecute* APIs used DDE.
             # Wipe out old registry entries.
             if int(old_proton_maj) < 6 or (int(old_proton_maj) == 6 and int(old_proton_min) < 3) or \
@@ -488,14 +486,10 @@ class CompatData:
                 except OSError:
                     log("Failed to back up old system.reg. Simply deleting it.")
                     os.remove(sysreg_fp)
-                    pass
-
                 try:
                     os.rename(new_sysreg_fp, sysreg_fp)
                 except OSError:
                     log("Unable to write new registry file to " + sysreg_fp)
-                    pass
-
             stale_builtins = [self.prefix_dir + "/drive_c/windows/system32/amd_ags_x64.dll",
                               self.prefix_dir + "/drive_c/windows/syswow64/amd_ags_x64.dll" ]
             for builtin in stale_builtins:
@@ -601,8 +595,7 @@ class CompatData:
     def migrate_user_paths(self):
         #move winxp-style paths to vista+ paths. we can't do this in
         #upgrade_pfx because Steam may drop cloud files here at any time.
-        for (old, new, link) in \
-                [
+        for (old, new, link) in [
                     ("drive_c/users/steamuser/Local Settings/Application Data",
                         self.prefix_dir + "drive_c/users/steamuser/AppData/Local",
                         "../AppData/Local"),
@@ -627,7 +620,7 @@ class CompatData:
             if not os.path.lexists(old):
                 makedirs(os.path.dirname(old))
                 os.symlink(src=link, dst=old)
-            elif os.path.islink(old) and not (os.readlink(old) == link):
+            elif os.path.islink(old) and os.readlink(old) != link:
                 os.remove(old)
                 os.symlink(src=link, dst=old)
 
@@ -960,14 +953,12 @@ class CompatData:
                 if not os.path.exists(self.prefix_dir + "drive_c/windows/syswow64"):
                     try_copy(g_proton.lib_dir + "wine/dxvk/" + f + ".dll",
                             self.prefix_dir + "drive_c/windows/system32/" + f + ".dll")
-                    g_session.dlloverrides[f] = "n"
                 else:
                     try_copy(g_proton.lib64_dir + "wine/dxvk/" + f + ".dll",
                             self.prefix_dir + "drive_c/windows/system32/" + f + ".dll")
                     try_copy(g_proton.lib_dir + "wine/dxvk/" + f + ".dll",
                             self.prefix_dir + "drive_c/windows/syswow64/" + f + ".dll")
-                    g_session.dlloverrides[f] = "n"
-
+                g_session.dlloverrides[f] = "n"
             # If the user requested the NVAPI be available, copy it into place.
             # If they didn't, clean up any stray nvapi DLLs.
             if use_nvapi:
@@ -1010,14 +1001,13 @@ class CompatData:
                 if not library_dir:
                     if os.path.lexists(gamedrive_path):
                         os.remove(gamedrive_path)
-                else:
-                    if os.path.lexists(gamedrive_path):
-                        cur_tgt = os.readlink(gamedrive_path)
-                        if cur_tgt != library_dir:
-                            os.remove(gamedrive_path)
-                            os.symlink(library_dir, gamedrive_path)
-                    else:
+                elif os.path.lexists(gamedrive_path):
+                    cur_tgt = os.readlink(gamedrive_path)
+                    if cur_tgt != library_dir:
+                        os.remove(gamedrive_path)
                         os.symlink(library_dir, gamedrive_path)
+                else:
+                    os.symlink(library_dir, gamedrive_path)
             elif os.path.lexists(gamedrive_path):
                 os.remove(gamedrive_path)
 
@@ -1026,7 +1016,7 @@ def comma_escaped(s):
     idx = -1
     while s[idx] == '\\':
         escaped = not escaped
-        idx = idx - 1
+        idx -= 1
     return escaped
 
 class Session:
@@ -1089,7 +1079,7 @@ class Session:
         prepend_to_env_str(self.env, "PATH", g_proton.bin_dir, ":")
 
     def check_environment(self, env_name, config_name):
-        if not env_name in self.env:
+        if env_name not in self.env:
             return False
         if nonzero(self.env[env_name]):
             self.compat_config.add(config_name)
@@ -1117,7 +1107,7 @@ class Session:
             #SteamGameId is not always available
             lfile_path = basedir + "/steam-proton.log"
         else:
-            if not "SteamGameId" in os.environ:
+            if "SteamGameId" not in os.environ:
                 return False
 
             lfile_path = basedir + "/steam-" + os.environ["SteamGameId"] + ".log"
@@ -1294,9 +1284,8 @@ class Session:
         if update_prefix_files:
             g_compatdata.setup_prefix()
 
-        if "winedxgi" in self.compat_config:
-            if "dxgi" in self.dlloverrides:
-                del self.dlloverrides["dxgi"]
+        if "winedxgi" in self.compat_config and "dxgi" in self.dlloverrides:
+            del self.dlloverrides["dxgi"]
 
         if "nod3d11" in self.compat_config:
             self.dlloverrides["d3d11"] = ""
